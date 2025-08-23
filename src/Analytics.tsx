@@ -73,6 +73,15 @@ const Analytics: React.FC<AnalyticsProps> = ({
     }
   };
 
+  // Debug logging
+  console.log('Analytics Component - Received props:', {
+    executions: executions.length,
+    surveyAnalytics,
+    feedbackData: feedbackData.length,
+    ratingData: ratingData.length,
+    ratingDataDetails: ratingData
+  });
+
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-gray-100">
       <div className="p-8 border-b border-gray-100">
@@ -124,14 +133,42 @@ const Analytics: React.FC<AnalyticsProps> = ({
             <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
             <span className="ml-3 text-gray-600">Loading analytics...</span>
           </div>
-        ) : surveyAnalytics.totalCalls === 0 ? (
+        ) : (ratingData.length === 0 && surveyAnalytics.totalCalls === 0) ? (
           <div className="text-center py-12">
             <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No rating data found</h3>
             <p className="text-gray-600">Make some calls with ratings to see analytics here</p>
+            
+            {/* Debug section */}
+            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-left">
+              <h4 className="font-medium text-yellow-900 mb-2">Debug Information:</h4>
+              <div className="text-sm text-yellow-800 space-y-1">
+                <p><strong>Executions:</strong> {executions.length}</p>
+                <p><strong>Survey Analytics Total Calls:</strong> {surveyAnalytics.totalCalls}</p>
+                <p><strong>Rating Data:</strong> {ratingData.length} items</p>
+                <p><strong>Feedback Data:</strong> {feedbackData.length} items</p>
+                <p><strong>Rating Details:</strong> {JSON.stringify(ratingData)}</p>
+                <p><strong>Survey Analytics:</strong> {JSON.stringify(surveyAnalytics)}</p>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="space-y-8">
+            {/* Debug Section */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <h3 className="font-medium text-blue-900 mb-2">Data Debug Info:</h3>
+              <div className="text-sm text-blue-800 space-y-1">
+                <p><strong>Total Calls:</strong> {surveyAnalytics.totalCalls}</p>
+                <p><strong>Average Rating:</strong> {surveyAnalytics.averageRating}</p>
+                <p><strong>Satisfaction Rate:</strong> {surveyAnalytics.satisfactionRate}%</p>
+                <p><strong>Response Rate:</strong> {surveyAnalytics.responseRate}%</p>
+                <p><strong>Rating Data Items:</strong> {ratingData.length}</p>
+                <p><strong>Feedback Data Items:</strong> {feedbackData.length}</p>
+                <p><strong>Language Usage:</strong> {JSON.stringify(surveyAnalytics.languageUsage)}</p>
+                <p><strong>Call Duration:</strong> {JSON.stringify(surveyAnalytics.callDuration)}</p>
+              </div>
+            </div>
+
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-xl border border-blue-200">
@@ -180,6 +217,15 @@ const Analytics: React.FC<AnalyticsProps> = ({
               {/* NPS Rating Chart */}
               <div className="bg-gray-50 p-6 rounded-xl">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">NPS Rating Distribution (0-10)</h3>
+                
+                {/* Debug info for chart */}
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
+                  <p><strong>Chart Debug:</strong></p>
+                  <p>Rating Data Length: {ratingData.length}</p>
+                  <p>Filtered Data: {ratingData.filter(d => d.count > 0).length} items</p>
+                  <p>Raw Rating Data: {JSON.stringify(ratingData)}</p>
+                </div>
+                
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={ratingData.filter(d => d.count > 0)}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -311,6 +357,18 @@ const Analytics: React.FC<AnalyticsProps> = ({
                   </div>
                 ))}
               </div>
+              
+              {/* Fallback display if no ratings with count > 0 */}
+              {ratingData.filter(r => r.count > 0).length === 0 && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <h4 className="font-medium text-red-900 mb-2">No Ratings Displayed - Debug Info:</h4>
+                  <div className="text-sm text-red-800">
+                    <p>All rating data: {JSON.stringify(ratingData)}</p>
+                    <p>Ratings with count &gt; 0: {ratingData.filter(r => r.count > 0).length}</p>
+                    <p>Total rating data length: {ratingData.length}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Feedback Summary */}

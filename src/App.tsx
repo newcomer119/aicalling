@@ -368,6 +368,11 @@ function App() {
     
     // Look for rating patterns in the conversation (NPS scale 0-10)
     const ratingPatterns = [
+      // Handle "ten ten" or "nine nine" patterns
+      /(?:ten|nine|eight|seven|six|five|four|three|two|one|zero)\s+(?:ten|nine|eight|seven|six|five|four|three|two|one|zero)/i,
+      // Handle "ten" or "nine" etc.
+      /(?:ten|nine|eight|seven|six|five|four|three|two|one|zero)/i,
+      // Handle numeric patterns
       /rate.*?(\d+).*?out.*?of.*?(\d+)/i,
       /rating.*?(\d+)/i,
       /score.*?(\d+)/i,
@@ -387,7 +392,30 @@ function App() {
     for (const pattern of ratingPatterns) {
       const match = conversationText.match(pattern);
       if (match) {
-        const rating = parseInt(match[1]);
+        let rating: number;
+        
+        // Handle word-based ratings first
+        if (pattern.source.includes('ten|nine|eight|seven|six|five|four|three|two|one|zero')) {
+          const wordToNumber: { [key: string]: number } = {
+            'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+            'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+          };
+          
+          // Check if it's a double word like "ten ten"
+          if (match[0].includes(' ')) {
+            const words = match[0].toLowerCase().split(' ');
+            if (words.length === 2 && words[0] === words[1]) {
+              rating = wordToNumber[words[0]] || 0;
+            } else {
+              rating = wordToNumber[words[0]] || 0;
+            }
+          } else {
+            rating = wordToNumber[match[0].toLowerCase()] || 0;
+          }
+        } else {
+          rating = parseInt(match[1]);
+        }
+        
         // Handle NPS scale 0-10
         if (rating >= 0 && rating <= 10) {
           return rating;
@@ -405,12 +433,15 @@ function App() {
 
     executions.forEach(execution => {
       const rating = extractRatingFromConversation(execution.conversation || execution.transcript);
+      console.log('Processing execution:', execution.execution_id, 'Rating extracted:', rating);
       if (rating !== null && rating >= 0 && rating <= 10) {
         ratings[rating]++;
         totalRatings++;
         totalScore += rating;
       }
     });
+
+    console.log('Final ratings:', ratings, 'Total ratings:', totalRatings, 'Total score:', totalScore);
 
     const ratingData: RatingData[] = Object.entries(ratings).map(([rating, count]) => ({
       rating: parseInt(rating),
@@ -462,11 +493,12 @@ function App() {
     }
 
     // SEO feedback - look for Google visibility and search results
-    if (conversationText.match(/seo.*?(good|great|excellent|amazing|wonderful|fantastic|perfect|well done)/i) ||
-        conversationText.match(/google.*?(see|visible|appear|show|find)/i) ||
-        conversationText.match(/search.*?(result|appear|visible)/i)) {
+    if (conversationText.match(/seo.*?(good|great|excellent|amazing|wonderful|fantastic|perfect|well done|pसंद|ज़्यादा|बहुत|अच्छी|बढ़िया)/i) ||
+        conversationText.match(/google.*?(see|visible|appear|show|find|listed|हो गए)/i) ||
+        conversationText.match(/search.*?(result|appear|visible)/i) ||
+        conversationText.match(/listed.*?(google|search)/i)) {
       feedback.seo.positive++;
-    } else if (conversationText.match(/seo.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
+    } else if (conversationText.match(/seo.*?(bad|poor|terrible|awful|horrible|disappointing|समस्या|समस्या)/i)) {
       feedback.seo.negative++;
     } else if (conversationText.match(/seo|google|search/i)) {
       feedback.seo.neutral++;
@@ -500,9 +532,9 @@ function App() {
     }
 
     // Overall satisfaction - look for positive phrases and ratings
-    if (conversationText.match(/(satisfied|happy|pleased|content|good|great|excellent|well done|everything was good|no issues)/i)) {
+    if (conversationText.match(/(satisfied|happy|pleased|content|good|great|excellent|well done|everything was good|no issues|pसंद|ज़्यादा|बहुत|अच्छी|बढ़िया|सफलता|बधाई)/i)) {
       feedback.overall.positive++;
-    } else if (conversationText.match(/(dissatisfied|unhappy|disappointed|frustrated|bad|poor|issues|problems)/i)) {
+    } else if (conversationText.match(/(dissatisfied|unhappy|disappointed|frustrated|bad|poor|issues|problems|समस्या|समस्या)/i)) {
       feedback.overall.negative++;
     } else {
       feedback.overall.neutral++;
@@ -531,12 +563,39 @@ function App() {
       conversationText = JSON.stringify(conversation);
     }
     
+    // Enhanced Hindi patterns including common words and phrases
     const hindiPatterns = [
       /[अ-ह]/,
       /[ा-ौ]/,
       /[्]/,
       /[ं]/,
-      /[ँ]/
+      /[ँ]/,
+      /नमस्ते/i,
+      /क्या/i,
+      /हां/i,
+      /नहीं/i,
+      /बहुत/i,
+      /ज़्यादा/i,
+      /पसंद/i,
+      /आई/i,
+      /सेवा/i,
+      /में/i,
+      /कोई/i,
+      /समस्या/i,
+      /सुधार/i,
+      /जरूरत/i,
+      /महसूस/i,
+      /हुई/i,
+      /सफलता/i,
+      /टीम/i,
+      /बधाई/i,
+      /सुझाव/i,
+      /देना/i,
+      /चाहेंगे/i,
+      /धन्यवाद/i,
+      /समय/i,
+      /प्रतिक्रिया/i,
+      /महत्वपूर्ण/i
     ];
     
     const hasHindi = hindiPatterns.some(pattern => pattern.test(conversationText));
@@ -661,54 +720,65 @@ function App() {
     let totalScore = 0;
 
     executions.forEach(execution => {
-      if (execution.status === 'completed') {
-        totalCalls++;
-        
-        // Extract rating
-        const rating = extractRatingFromConversation(execution.conversation || execution.transcript);
-        if (rating !== null) {
-          totalRating++;
-          totalScore += rating;
-        }
-
-        // Extract feedback
-        const feedback = extractFeedbackData(execution.conversation || execution.transcript);
-        if (feedback) {
-          feedbackCategories[0].positive += feedback.website.positive;
-          feedbackCategories[0].negative += feedback.website.negative;
-          feedbackCategories[0].neutral += feedback.website.neutral;
-          
-          feedbackCategories[1].positive += feedback.seo.positive;
-          feedbackCategories[1].negative += feedback.seo.negative;
-          feedbackCategories[1].neutral += feedback.seo.neutral;
-          
-          feedbackCategories[2].positive += feedback.socialMedia.positive;
-          feedbackCategories[2].negative += feedback.socialMedia.negative;
-          feedbackCategories[2].neutral += feedback.socialMedia.neutral;
-          
-          feedbackCategories[3].positive += feedback.content.positive;
-          feedbackCategories[3].negative += feedback.content.negative;
-          feedbackCategories[3].neutral += feedback.content.neutral;
-          
-          feedbackCategories[4].positive += feedback.marketing.positive;
-          feedbackCategories[4].negative += feedback.marketing.negative;
-          feedbackCategories[4].neutral += feedback.marketing.neutral;
-          
-          feedbackCategories[5].positive += feedback.overall.positive;
-          feedbackCategories[5].negative += feedback.overall.negative;
-          feedbackCategories[5].neutral += feedback.overall.neutral;
-        }
-
-        // Analyze language usage
-        const language = analyzeLanguageUsage(execution.conversation || execution.transcript);
-        languageUsage[language]++;
-
-        // Categorize call duration
-        if (execution.duration) {
-          const durationCategory = categorizeCallDuration(execution.duration);
-          callDuration[durationCategory]++;
-        }
+      // Process all executions, not just completed ones
+      totalCalls++;
+      
+      // Extract rating
+      const rating = extractRatingFromConversation(execution.conversation || execution.transcript);
+      console.log('Survey Analytics - Execution:', execution.execution_id, 'Rating:', rating);
+      if (rating !== null) {
+        totalRating++;
+        totalScore += rating;
       }
+
+      // Extract feedback
+      const feedback = extractFeedbackData(execution.conversation || execution.transcript);
+      console.log('Survey Analytics - Execution:', execution.execution_id, 'Feedback:', feedback);
+      if (feedback) {
+        feedbackCategories[0].positive += feedback.website.positive;
+        feedbackCategories[0].negative += feedback.website.negative;
+        feedbackCategories[0].neutral += feedback.website.neutral;
+        
+        feedbackCategories[1].positive += feedback.seo.positive;
+        feedbackCategories[1].negative += feedback.seo.negative;
+        feedbackCategories[1].neutral += feedback.seo.neutral;
+        
+        feedbackCategories[2].positive += feedback.socialMedia.positive;
+        feedbackCategories[2].negative += feedback.socialMedia.negative;
+        feedbackCategories[2].neutral += feedback.socialMedia.neutral;
+        
+        feedbackCategories[3].positive += feedback.content.positive;
+        feedbackCategories[3].negative += feedback.content.negative;
+        feedbackCategories[3].neutral += feedback.content.neutral;
+        
+        feedbackCategories[4].positive += feedback.marketing.positive;
+        feedbackCategories[4].negative += feedback.marketing.negative;
+        feedbackCategories[4].neutral += feedback.marketing.neutral;
+        
+        feedbackCategories[5].positive += feedback.overall.positive;
+        feedbackCategories[5].negative += feedback.overall.negative;
+        feedbackCategories[5].neutral += feedback.overall.neutral;
+      }
+
+      // Analyze language usage
+      const language = analyzeLanguageUsage(execution.conversation || execution.transcript);
+      console.log('Survey Analytics - Execution:', execution.execution_id, 'Language:', language);
+      languageUsage[language]++;
+
+      // Categorize call duration
+      if (execution.duration) {
+        const durationCategory = categorizeCallDuration(execution.duration);
+        callDuration[durationCategory]++;
+      }
+    });
+
+    console.log('Survey Analytics - Final results:', {
+      totalCalls,
+      totalRating,
+      totalScore,
+      feedbackCategories,
+      languageUsage,
+      callDuration
     });
 
     // Calculate totals for each category
@@ -781,6 +851,10 @@ function App() {
       );
 
       setExecutions(detailedExecutions);
+      
+      // Debug: Log execution statuses
+      console.log('Execution statuses:', detailedExecutions.map(e => ({ id: e.execution_id, status: e.status })));
+      
       processRatingData(detailedExecutions);
       processSurveyAnalytics(detailedExecutions);
     } catch (error) {
