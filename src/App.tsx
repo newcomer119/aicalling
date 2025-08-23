@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Phone, CheckCircle, AlertCircle, Loader2, Upload, FileText, Play, Pause, SkipForward, History, Download, MessageSquare, Clock, User, BarChart3, Star, TrendingUp } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Phone, CheckCircle, AlertCircle, Loader2, Upload, FileText, Play, Pause, SkipForward, History, Download, MessageSquare, Clock, User } from 'lucide-react';
+
 import * as XLSX from 'xlsx';
+import Analytics from './Analytics';
 
 interface CallResponse {
   success: boolean;
@@ -93,7 +94,6 @@ function App() {
     responseRate: 0
   });
   const [feedbackData, setFeedbackData] = useState<FeedbackData[]>([]);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const AUTH_TOKEN = 'bn-69e9b7cc1a154869931c241d795b050f';
   const AGENT_ID = '3e0767cb-3020-4355-a269-58bea73ca685';
@@ -343,10 +343,28 @@ function App() {
   const extractRatingFromConversation = (conversation: any): number | null => {
     if (!conversation) return null;
     
-    // Convert conversation to string if it's an object
-    const conversationText = typeof conversation === 'string' 
-      ? conversation 
-      : JSON.stringify(conversation);
+    let conversationText = '';
+    
+    // Handle the complex Bolna API data structure
+    if (conversation.data && Array.isArray(conversation.data)) {
+      // Extract user responses from transcriber data
+      const userResponses = conversation.data
+        .filter((item: any) => item.component === 'transcriber' && item.type === 'response')
+        .map((item: any) => item.data)
+        .join(' ');
+      
+      // Extract agent responses from LLM data
+      const agentResponses = conversation.data
+        .filter((item: any) => item.component === 'llm' && item.type === 'response')
+        .map((item: any) => item.data)
+        .join(' ');
+      
+      conversationText = `${userResponses} ${agentResponses}`;
+    } else if (typeof conversation === 'string') {
+      conversationText = conversation;
+    } else {
+      conversationText = JSON.stringify(conversation);
+    }
     
     // Look for rating patterns in the conversation (NPS scale 0-10)
     const ratingPatterns = [
@@ -359,7 +377,11 @@ function App() {
       /nps.*?(\d+)/i,
       /satisfaction.*?(\d+)/i,
       /(\d+).*?scale/i,
-      /scale.*?(\d+)/i
+      /scale.*?(\d+)/i,
+      /around.*?(\d+)/i,
+      /(\d+).*?out.*?of.*?(\d+)/i,
+      /(\d+)\s*(\d+)/i, // For cases like "nine nine" = 99, but we'll take first number
+      /(\d+)/i // General number detection
     ];
 
     for (const pattern of ratingPatterns) {
@@ -404,9 +426,22 @@ function App() {
   const extractFeedbackData = (conversation: any): any => {
     if (!conversation) return null;
     
-    const conversationText = typeof conversation === 'string' 
-      ? conversation 
-      : JSON.stringify(conversation);
+    let conversationText = '';
+    
+    // Handle the complex Bolna API data structure
+    if (conversation.data && Array.isArray(conversation.data)) {
+      // Extract user responses from transcriber data
+      const userResponses = conversation.data
+        .filter((item: any) => item.component === 'transcriber' && item.type === 'response')
+        .map((item: any) => item.data)
+        .join(' ');
+      
+      conversationText = userResponses;
+    } else if (typeof conversation === 'string') {
+      conversationText = conversation;
+    } else {
+      conversationText = JSON.stringify(conversation);
+    }
     
     const feedback = {
       website: { positive: 0, negative: 0, neutral: 0 },
@@ -418,7 +453,7 @@ function App() {
     };
 
     // Website feedback
-    if (conversationText.match(/website.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+    if (conversationText.match(/website.*?(good|great|excellent|amazing|wonderful|fantastic|perfect|well done)/i)) {
       feedback.website.positive++;
     } else if (conversationText.match(/website.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
       feedback.website.negative++;
@@ -426,17 +461,19 @@ function App() {
       feedback.website.neutral++;
     }
 
-    // SEO feedback
-    if (conversationText.match(/seo.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+    // SEO feedback - look for Google visibility and search results
+    if (conversationText.match(/seo.*?(good|great|excellent|amazing|wonderful|fantastic|perfect|well done)/i) ||
+        conversationText.match(/google.*?(see|visible|appear|show|find)/i) ||
+        conversationText.match(/search.*?(result|appear|visible)/i)) {
       feedback.seo.positive++;
     } else if (conversationText.match(/seo.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
       feedback.seo.negative++;
-    } else if (conversationText.match(/seo/i)) {
+    } else if (conversationText.match(/seo|google|search/i)) {
       feedback.seo.neutral++;
     }
 
     // Social Media feedback
-    if (conversationText.match(/social.*?media.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+    if (conversationText.match(/social.*?media.*?(good|great|excellent|amazing|wonderful|fantastic|perfect|well done)/i)) {
       feedback.socialMedia.positive++;
     } else if (conversationText.match(/social.*?media.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
       feedback.socialMedia.negative++;
@@ -445,7 +482,7 @@ function App() {
     }
 
     // Content feedback
-    if (conversationText.match(/content.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+    if (conversationText.match(/content.*?(good|great|excellent|amazing|wonderful|fantastic|perfect|well done)/i)) {
       feedback.content.positive++;
     } else if (conversationText.match(/content.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
       feedback.content.negative++;
@@ -454,7 +491,7 @@ function App() {
     }
 
     // Marketing feedback
-    if (conversationText.match(/marketing.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+    if (conversationText.match(/marketing.*?(good|great|excellent|amazing|wonderful|fantastic|perfect|well done)/i)) {
       feedback.marketing.positive++;
     } else if (conversationText.match(/marketing.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
       feedback.marketing.negative++;
@@ -462,10 +499,10 @@ function App() {
       feedback.marketing.neutral++;
     }
 
-    // Overall satisfaction
-    if (conversationText.match(/(satisfied|happy|pleased|content|good|great|excellent)/i)) {
+    // Overall satisfaction - look for positive phrases and ratings
+    if (conversationText.match(/(satisfied|happy|pleased|content|good|great|excellent|well done|everything was good|no issues)/i)) {
       feedback.overall.positive++;
-    } else if (conversationText.match(/(dissatisfied|unhappy|disappointed|frustrated|bad|poor)/i)) {
+    } else if (conversationText.match(/(dissatisfied|unhappy|disappointed|frustrated|bad|poor|issues|problems)/i)) {
       feedback.overall.negative++;
     } else {
       feedback.overall.neutral++;
@@ -477,9 +514,22 @@ function App() {
   const analyzeLanguageUsage = (conversation: any): 'english' | 'hindi' | 'both' => {
     if (!conversation) return 'english';
     
-    const conversationText = typeof conversation === 'string' 
-      ? conversation 
-      : JSON.stringify(conversation);
+    let conversationText = '';
+    
+    // Handle the complex Bolna API data structure
+    if (conversation.data && Array.isArray(conversation.data)) {
+      // Extract user responses from transcriber data
+      const userResponses = conversation.data
+        .filter((item: any) => item.component === 'transcriber' && item.type === 'response')
+        .map((item: any) => item.data)
+        .join(' ');
+      
+      conversationText = userResponses;
+    } else if (typeof conversation === 'string') {
+      conversationText = conversation;
+    } else {
+      conversationText = JSON.stringify(conversation);
+    }
     
     const hindiPatterns = [
       /[अ-ह]/,
@@ -501,6 +551,97 @@ function App() {
     if (duration < 180) return 'short'; // Less than 3 minutes
     if (duration < 300) return 'medium'; // 3-5 minutes
     return 'long'; // More than 5 minutes
+  };
+
+  const createReadableConversation = (conversation: any): any[] => {
+    if (!conversation) return [];
+    
+    // Handle the complex Bolna API data structure
+    if (conversation.data && Array.isArray(conversation.data)) {
+      const messages: any[] = [];
+      
+      // Group related messages by timestamp
+      const groupedMessages = conversation.data.reduce((acc: any, item: any) => {
+        const timestamp = item.created_at;
+        if (!acc[timestamp]) {
+          acc[timestamp] = [];
+        }
+        acc[timestamp].push(item);
+        return acc;
+      }, {});
+      
+      // Process each timestamp group
+      Object.entries(groupedMessages).forEach(([timestamp, items]: [string, any]) => {
+        const transcriberItem = items.find((item: any) => item.component === 'transcriber' && item.type === 'response');
+        const llmItem = items.find((item: any) => item.component === 'llm' && item.type === 'response');
+        
+        if (transcriberItem) {
+          messages.push({
+            role: 'user',
+            content: transcriberItem.data,
+            timestamp: timestamp
+          });
+        }
+        
+        if (llmItem) {
+          messages.push({
+            role: 'assistant',
+            content: llmItem.data,
+            timestamp: timestamp
+          });
+        }
+      });
+      
+      return messages;
+    }
+    
+    // Fallback for other conversation formats
+    if (Array.isArray(conversation)) {
+      return conversation;
+    }
+    
+    return [];
+  };
+
+  const renderConversation = (selectedCall: any) => {
+    const readableConversation = createReadableConversation(selectedCall.conversation);
+    
+    if (readableConversation.length > 0) {
+      return (
+        <div className="space-y-4">
+          {readableConversation.map((message: any, index: number) => (
+            <div key={index} className={`flex ${message.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
+              <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${message.role === 'assistant' ? 'bg-gray-100 text-gray-900' : 'bg-blue-500 text-white'}`}>
+                <p className="text-sm">{message.content}</p>
+                {message.timestamp && (
+                  <p className="text-xs opacity-70 mt-1">{formatDate(message.timestamp)}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    } else if (selectedCall.transcript) {
+      return (
+        <div className="prose max-w-none">
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h3 className="font-medium text-gray-900 mb-2">Full Transcript:</h3>
+            <p className="text-gray-700 whitespace-pre-wrap">{selectedCall.transcript}</p>
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div className="text-center py-8">
+          <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-600">No conversation data available for this call</p>
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+            <h4 className="font-medium text-gray-900 mb-2">Raw Data:</h4>
+            <pre className="text-xs text-gray-600 overflow-auto">{JSON.stringify(selectedCall, null, 2)}</pre>
+          </div>
+        </div>
+      );
+    }
   };
 
   const processSurveyAnalytics = (executions: ExecutionData[]) => {
@@ -700,7 +841,26 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#16a34a'];
+  const exportAnalytics = () => {
+    const analyticsData = {
+      timestamp: new Date().toISOString(),
+      agent_id: AGENT_ID,
+      summary: surveyAnalytics,
+      feedback_data: feedbackData,
+      rating_data: ratingData
+    };
+    const dataStr = JSON.stringify(analyticsData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `analytics-${AGENT_ID}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setStatus({ type: 'success', message: 'Analytics data exported successfully!' });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
@@ -1137,360 +1297,17 @@ function App() {
             </div>
           </div>
         ) : (
-          // Analytics Interface
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100">
-            <div className="p-8 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center shadow-lg">
-                    <BarChart3 className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Feedback Analytics</h1>
-                    <p className="text-gray-600">Customer satisfaction ratings and insights</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <button onClick={fetchAllExecutions} disabled={isLoadingLogs} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center space-x-2">
-                    {isLoadingLogs ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />} 
-                    <span>Refresh Data</span>
-                  </button>
-                  {surveyAnalytics.totalCalls > 0 && (
-                    <button 
-                      onClick={() => {
-                        const analyticsData = {
-                          timestamp: new Date().toISOString(),
-                          agent_id: AGENT_ID,
-                          summary: surveyAnalytics,
-                          feedback_data: feedbackData,
-                          rating_data: ratingData
-                        };
-                        const dataStr = JSON.stringify(analyticsData, null, 2);
-                        const dataBlob = new Blob([dataStr], { type: 'application/json' });
-                        const url = URL.createObjectURL(dataBlob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = `analytics-${AGENT_ID}-${new Date().toISOString().split('T')[0]}.json`;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
-                        setStatus({ type: 'success', message: 'Analytics data exported successfully!' });
-                      }}
-                      className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Export Analytics</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-8">
-              {isLoadingLogs ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                  <span className="ml-3 text-gray-600">Loading analytics...</span>
-                </div>
-              ) : surveyAnalytics.totalCalls === 0 ? (
-                <div className="text-center py-12">
-                  <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No rating data found</h3>
-                  <p className="text-gray-600">Make some calls with ratings to see analytics here</p>
-                </div>
-              ) : (
-                <div className="space-y-8">
-                  {/* Summary Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-xl border border-blue-200">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-blue-600 text-sm font-medium">Total Calls</p>
-                          <p className="text-3xl font-bold text-blue-900">{surveyAnalytics.totalCalls}</p>
-                        </div>
-                        <Phone className="w-8 h-8 text-blue-500" />
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl border border-green-200">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-green-600 text-sm font-medium">Average NPS</p>
-                          <p className="text-3xl font-bold text-green-900">{surveyAnalytics.averageRating}/10</p>
-                        </div>
-                        <Star className="w-8 h-8 text-green-500" />
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-xl border border-purple-200">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-purple-600 text-sm font-medium">Satisfaction Rate</p>
-                          <p className="text-3xl font-bold text-purple-900">{surveyAnalytics.satisfactionRate}%</p>
-                        </div>
-                        <TrendingUp className="w-8 h-8 text-purple-500" />
-                      </div>
-                    </div>
-
-                    <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-6 rounded-xl border border-orange-200">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-orange-600 text-sm font-medium">Response Rate</p>
-                          <p className="text-3xl font-bold text-orange-900">{surveyAnalytics.responseRate}%</p>
-                        </div>
-                        <MessageSquare className="w-8 h-8 text-orange-500" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Charts */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* NPS Rating Chart */}
-                    <div className="bg-gray-50 p-6 rounded-xl">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">NPS Rating Distribution (0-10)</h3>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={ratingData.filter(d => d.count > 0)}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis 
-                            dataKey="rating" 
-                            tickFormatter={(value) => `${value}`}
-                          />
-                          <YAxis />
-                          <Tooltip 
-                            formatter={(value, name) => [value, 'Count']}
-                            labelFormatter={(label) => `Rating: ${label}`}
-                          />
-                          <Bar dataKey="count" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    {/* Language Usage Chart */}
-                    <div className="bg-gray-50 p-6 rounded-xl">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Language Usage</h3>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                          <Pie
-                            data={[
-                              { name: 'English', value: surveyAnalytics.languageUsage.english },
-                              { name: 'Hindi', value: surveyAnalytics.languageUsage.hindi },
-                              { name: 'Both', value: surveyAnalytics.languageUsage.both }
-                            ].filter(d => d.value > 0)}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            label={({ name, value }) => `${name}: ${value}`}
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="value"
-                          >
-                            <Cell fill="#3B82F6" />
-                            <Cell fill="#10B981" />
-                            <Cell fill="#F59E0B" />
-                          </Pie>
-                          <Tooltip formatter={(value, name) => [value, 'Calls']} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Feedback Categories Chart */}
-                  <div className="bg-gray-50 p-6 rounded-xl">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Feedback by Category</h3>
-                    <ResponsiveContainer width="100%" height={400}>
-                      <BarChart data={feedbackData.filter(d => d.total > 0)}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="category" />
-                        <YAxis />
-                        <Tooltip 
-                          formatter={(value: any, name: string) => [value, name]}
-                          content={({ active, payload, label }: any) => {
-                            if (active && payload && payload.length) {
-                              const data = payload[0].payload;
-                              return (
-                                <div className="bg-white p-3 border rounded-lg shadow-lg">
-                                  <p className="font-medium">{label}</p>
-                                  <p className="text-green-600">Positive: {data.positive}</p>
-                                  <p className="text-red-600">Negative: {data.negative}</p>
-                                  <p className="text-gray-600">Neutral: {data.neutral}</p>
-                                  <p className="text-blue-600">Total: {data.total}</p>
-                                </div>
-                              );
-                            }
-                            return null;
-                          }}
-                        />
-                        <Legend />
-                        <Bar dataKey="positive" stackId="a" fill="#10B981" name="Positive" />
-                        <Bar dataKey="negative" stackId="a" fill="#EF4444" name="Negative" />
-                        <Bar dataKey="neutral" stackId="a" fill="#6B7280" name="Neutral" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Call Duration Chart */}
-                  <div className="bg-gray-50 p-6 rounded-xl">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Call Duration Distribution</h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Short (<3 min)', value: surveyAnalytics.callDuration.short },
-                            { name: 'Medium (3-5 min)', value: surveyAnalytics.callDuration.medium },
-                            { name: 'Long (>5 min)', value: surveyAnalytics.callDuration.long }
-                          ].filter(d => d.value > 0)}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={({ name, value }) => `${name}: ${value}`}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          <Cell fill="#EF4444" />
-                          <Cell fill="#F59E0B" />
-                          <Cell fill="#10B981" />
-                        </Pie>
-                        <Tooltip formatter={(value, name) => [value, 'Calls']} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Detailed Breakdown */}
-                  <div className="bg-gray-50 p-6 rounded-xl">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">NPS Rating Breakdown</h3>
-                    <div className="space-y-3">
-                      {ratingData.filter(r => r.count > 0).map((rating) => (
-                        <div key={rating.rating} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                          <div className="flex items-center space-x-3">
-                            <span className="text-2xl font-bold text-blue-600">{rating.rating}</span>
-                            <span className="font-medium text-gray-900">NPS Rating</span>
-                          </div>
-                          <div className="flex items-center space-x-4">
-                            <span className="text-gray-600">{rating.count} calls</span>
-                            <span className="font-semibold text-gray-900">{rating.percentage}%</span>
-                            <div className="w-20 bg-gray-200 rounded-full h-2">
-                              <div
-                                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                                style={{ width: `${rating.percentage}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Feedback Summary */}
-                  <div className="bg-gray-50 p-6 rounded-xl">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Feedback Summary by Service</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {feedbackData.filter(d => d.total > 0).map((category) => (
-                        <div key={category.category} className="bg-white p-4 rounded-lg border">
-                          <h4 className="font-semibold text-gray-900 mb-3">{category.category}</h4>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-green-600">Positive</span>
-                              <span className="font-medium">{category.positive}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-red-600">Negative</span>
-                              <span className="font-medium">{category.negative}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Neutral</span>
-                              <span className="font-medium">{category.neutral}</span>
-                            </div>
-                            <div className="border-t pt-2">
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-gray-900">Total</span>
-                                <span className="font-bold text-blue-600">{category.total}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Survey Questions & Responses */}
-              {surveyAnalytics.totalCalls > 0 && (
-                <div className="mt-8 bg-gray-50 p-6 rounded-xl">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Survey Questions & Response Analysis</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white p-4 rounded-lg border">
-                      <h4 className="font-medium text-gray-900 mb-3">Survey Questions Asked</h4>
-                      <ul className="text-sm text-gray-700 space-y-2">
-                        <li>• Overall satisfaction with WEBSITES, SEO, SOCIAL MEDIA MANAGEMENT</li>
-                        <li>• NPS score rating (0-10 scale)</li>
-                        <li>• What customers liked most about the services</li>
-                        <li>• Areas of improvement or challenges faced</li>
-                        <li>• Language preference (English/Hindi)</li>
-                      </ul>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg border">
-                      <h4 className="font-medium text-gray-900 mb-3">Response Insights</h4>
-                      <div className="text-sm text-gray-700 space-y-2">
-                        <p><span className="font-medium">Total Responses:</span> {surveyAnalytics.totalCalls}</p>
-                        <p><span className="font-medium">Rating Responses:</span> {Math.round((surveyAnalytics.totalCalls * surveyAnalytics.responseRate) / 100)}</p>
-                        <p><span className="font-medium">Language Mix:</span> {surveyAnalytics.languageUsage.english}E, {surveyAnalytics.languageUsage.hindi}H, {surveyAnalytics.languageUsage.both}B</p>
-                        <p><span className="font-medium">Avg Call Duration:</span> {surveyAnalytics.callDuration.medium > 0 ? '3-5 min' : surveyAnalytics.callDuration.short > 0 ? '<3 min' : '>5 min'}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Business Context */}
-              <div className="mt-8 bg-blue-50 p-6 rounded-xl border border-blue-200">
-                <h3 className="text-lg font-semibold text-blue-900 mb-4">Business Context</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="font-medium text-blue-900 mb-2">About Our Business</h4>
-                    <p className="text-sm text-blue-800">
-                      WE CREATES WEBSITES FOR SMALL BUSINESSES AND STARTUPS HELP IN THEIR SEO, MANAGE CONTENT, MARKET THEM
-                    </p>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-blue-900 mb-2">Survey Agent</h4>
-                    <p className="text-sm text-blue-800">
-                      Feedback Assistant - A survey agent at AiServices collecting feedback on website, SEO, and social media management services
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Survey Guidelines */}
-              <div className="mt-8 bg-green-50 p-6 rounded-xl border border-green-200">
-                <h3 className="text-lg font-semibold text-green-900 mb-4">Survey Guidelines & Agent Behavior</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="font-medium text-green-900 mb-2">Agent Characteristics</h4>
-                    <ul className="text-sm text-green-800 space-y-1">
-                      <li>• Extremely friendly and understanding</li>
-                      <li>• Starts sentences with conversational words</li>
-                      <li>• Communicates in English and Hindi</li>
-                      <li>• Professional but kind HR-like tone</li>
-                      <li>• Keeps responses short and crisp</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-green-900 mb-2">Survey Flow</h4>
-                    <ul className="text-sm text-green-800 space-y-1">
-                      <li>• Introduces as Feedback Assistant</li>
-                      <li>• Asks if it's a good time to chat</li>
-                      <li>• Collects NPS score (0-10)</li>
-                      <li>• Gathers positive feedback</li>
-                      <li>• Identifies improvement areas</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <Analytics
+            executions={executions}
+            isLoadingLogs={isLoadingLogs}
+            surveyAnalytics={surveyAnalytics}
+            feedbackData={feedbackData}
+            ratingData={ratingData}
+            onRefresh={fetchAllExecutions}
+            onExportAnalytics={exportAnalytics}
+            status={status}
+            AGENT_ID={AGENT_ID}
+          />
         )}
       </div>
 
@@ -1520,36 +1337,7 @@ function App() {
             </div>
 
             <div className="p-6 overflow-y-auto max-h-[70vh]">
-              {selectedCall.conversation && Array.isArray(selectedCall.conversation) ? (
-                <div className="space-y-4">
-                  {selectedCall.conversation.map((message: any, index: number) => (
-                    <div key={index} className={`flex ${message.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
-                      <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${message.role === 'assistant' ? 'bg-gray-100 text-gray-900' : 'bg-blue-500 text-white'}`}>
-                        <p className="text-sm">{message.content}</p>
-                        {message.timestamp && (
-                          <p className="text-xs opacity-70 mt-1">{formatDate(message.timestamp)}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : selectedCall.transcript ? (
-                <div className="prose max-w-none">
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="font-medium text-gray-900 mb-2">Full Transcript:</h3>
-                    <p className="text-gray-700 whitespace-pre-wrap">{selectedCall.transcript}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-600">No conversation data available for this call</p>
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-2">Raw Data:</h4>
-                    <pre className="text-xs text-gray-600 overflow-auto">{JSON.stringify(selectedCall, null, 2)}</pre>
-                  </div>
-                </div>
-              )}
+              {renderConversation(selectedCall)}
             </div>
 
             {selectedCall.recording_url && (
