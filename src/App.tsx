@@ -348,23 +348,27 @@ function App() {
       ? conversation 
       : JSON.stringify(conversation);
     
-    // Look for rating patterns in the conversation
+    // Look for rating patterns in the conversation (NPS scale 0-10)
     const ratingPatterns = [
       /rate.*?(\d+).*?out.*?of.*?(\d+)/i,
       /rating.*?(\d+)/i,
       /score.*?(\d+)/i,
       /(\d+).*?stars?/i,
       /(\d+).*?out.*?of.*?(\d+)/i,
-      /give.*?(\d+)/i
+      /give.*?(\d+)/i,
+      /nps.*?(\d+)/i,
+      /satisfaction.*?(\d+)/i,
+      /(\d+).*?scale/i,
+      /scale.*?(\d+)/i
     ];
 
     for (const pattern of ratingPatterns) {
       const match = conversationText.match(pattern);
       if (match) {
         const rating = parseInt(match[1]);
-        // Normalize to 1-5 scale if needed
-        if (rating >= 1 && rating <= 10) {
-          return rating <= 5 ? rating : Math.round(rating / 2);
+        // Handle NPS scale 0-10
+        if (rating >= 0 && rating <= 10) {
+          return rating;
         }
       }
     }
@@ -373,13 +377,13 @@ function App() {
   };
 
   const processRatingData = (executions: ExecutionData[]) => {
-    const ratings: { [key: number]: number } = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    const ratings: { [key: number]: number } = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
     let totalRatings = 0;
     let totalScore = 0;
 
     executions.forEach(execution => {
       const rating = extractRatingFromConversation(execution.conversation || execution.transcript);
-      if (rating && rating >= 1 && rating <= 5) {
+      if (rating !== null && rating >= 0 && rating <= 10) {
         ratings[rating]++;
         totalRatings++;
         totalScore += rating;
@@ -395,6 +399,194 @@ function App() {
     setRatingData(ratingData);
     setTotalCalls(totalRatings);
     setAverageRating(totalRatings > 0 ? Math.round((totalScore / totalRatings) * 10) / 10 : 0);
+  };
+
+  const extractFeedbackData = (conversation: any): any => {
+    if (!conversation) return null;
+    
+    const conversationText = typeof conversation === 'string' 
+      ? conversation 
+      : JSON.stringify(conversation);
+    
+    const feedback = {
+      website: { positive: 0, negative: 0, neutral: 0 },
+      seo: { positive: 0, negative: 0, neutral: 0 },
+      socialMedia: { positive: 0, negative: 0, neutral: 0 },
+      content: { positive: 0, negative: 0, neutral: 0 },
+      marketing: { positive: 0, negative: 0, neutral: 0 },
+      overall: { positive: 0, negative: 0, neutral: 0 }
+    };
+
+    // Website feedback
+    if (conversationText.match(/website.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+      feedback.website.positive++;
+    } else if (conversationText.match(/website.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
+      feedback.website.negative++;
+    } else if (conversationText.match(/website/i)) {
+      feedback.website.neutral++;
+    }
+
+    // SEO feedback
+    if (conversationText.match(/seo.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+      feedback.seo.positive++;
+    } else if (conversationText.match(/seo.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
+      feedback.seo.negative++;
+    } else if (conversationText.match(/seo/i)) {
+      feedback.seo.neutral++;
+    }
+
+    // Social Media feedback
+    if (conversationText.match(/social.*?media.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+      feedback.socialMedia.positive++;
+    } else if (conversationText.match(/social.*?media.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
+      feedback.socialMedia.negative++;
+    } else if (conversationText.match(/social.*?media/i)) {
+      feedback.socialMedia.neutral++;
+    }
+
+    // Content feedback
+    if (conversationText.match(/content.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+      feedback.content.positive++;
+    } else if (conversationText.match(/content.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
+      feedback.content.negative++;
+    } else if (conversationText.match(/content/i)) {
+      feedback.content.neutral++;
+    }
+
+    // Marketing feedback
+    if (conversationText.match(/marketing.*?(good|great|excellent|amazing|wonderful|fantastic|perfect)/i)) {
+      feedback.marketing.positive++;
+    } else if (conversationText.match(/marketing.*?(bad|poor|terrible|awful|horrible|disappointing)/i)) {
+      feedback.marketing.negative++;
+    } else if (conversationText.match(/marketing/i)) {
+      feedback.marketing.neutral++;
+    }
+
+    // Overall satisfaction
+    if (conversationText.match(/(satisfied|happy|pleased|content|good|great|excellent)/i)) {
+      feedback.overall.positive++;
+    } else if (conversationText.match(/(dissatisfied|unhappy|disappointed|frustrated|bad|poor)/i)) {
+      feedback.overall.negative++;
+    } else {
+      feedback.overall.neutral++;
+    }
+
+    return feedback;
+  };
+
+  const analyzeLanguageUsage = (conversation: any): 'english' | 'hindi' | 'both' => {
+    if (!conversation) return 'english';
+    
+    const conversationText = typeof conversation === 'string' 
+      ? conversation 
+      : JSON.stringify(conversation);
+    
+    const hindiPatterns = [
+      /[अ-ह]/,
+      /[ा-ौ]/,
+      /[्]/,
+      /[ं]/,
+      /[ँ]/
+    ];
+    
+    const hasHindi = hindiPatterns.some(pattern => pattern.test(conversationText));
+    const hasEnglish = /[a-zA-Z]/.test(conversationText);
+    
+    if (hasHindi && hasEnglish) return 'both';
+    if (hasHindi) return 'hindi';
+    return 'english';
+  };
+
+  const categorizeCallDuration = (duration: number): 'short' | 'medium' | 'long' => {
+    if (duration < 180) return 'short'; // Less than 3 minutes
+    if (duration < 300) return 'medium'; // 3-5 minutes
+    return 'long'; // More than 5 minutes
+  };
+
+  const processSurveyAnalytics = (executions: ExecutionData[]) => {
+    const feedbackCategories: FeedbackData[] = [
+      { category: 'Website', positive: 0, negative: 0, neutral: 0, total: 0 },
+      { category: 'SEO', positive: 0, negative: 0, neutral: 0, total: 0 },
+      { category: 'Social Media', positive: 0, negative: 0, neutral: 0, total: 0 },
+      { category: 'Content', positive: 0, negative: 0, neutral: 0, total: 0 },
+      { category: 'Marketing', positive: 0, negative: 0, neutral: 0, total: 0 },
+      { category: 'Overall', positive: 0, negative: 0, neutral: 0, total: 0 }
+    ];
+
+    const languageUsage = { english: 0, hindi: 0, both: 0 };
+    const callDuration = { short: 0, medium: 0, long: 0 };
+    let totalCalls = 0;
+    let totalRating = 0;
+    let totalScore = 0;
+
+    executions.forEach(execution => {
+      if (execution.status === 'completed') {
+        totalCalls++;
+        
+        // Extract rating
+        const rating = extractRatingFromConversation(execution.conversation || execution.transcript);
+        if (rating !== null) {
+          totalRating++;
+          totalScore += rating;
+        }
+
+        // Extract feedback
+        const feedback = extractFeedbackData(execution.conversation || execution.transcript);
+        if (feedback) {
+          feedbackCategories[0].positive += feedback.website.positive;
+          feedbackCategories[0].negative += feedback.website.negative;
+          feedbackCategories[0].neutral += feedback.website.neutral;
+          
+          feedbackCategories[1].positive += feedback.seo.positive;
+          feedbackCategories[1].negative += feedback.seo.negative;
+          feedbackCategories[1].neutral += feedback.seo.neutral;
+          
+          feedbackCategories[2].positive += feedback.socialMedia.positive;
+          feedbackCategories[2].negative += feedback.socialMedia.negative;
+          feedbackCategories[2].neutral += feedback.socialMedia.neutral;
+          
+          feedbackCategories[3].positive += feedback.content.positive;
+          feedbackCategories[3].negative += feedback.content.negative;
+          feedbackCategories[3].neutral += feedback.content.neutral;
+          
+          feedbackCategories[4].positive += feedback.marketing.positive;
+          feedbackCategories[4].negative += feedback.marketing.negative;
+          feedbackCategories[4].neutral += feedback.marketing.neutral;
+          
+          feedbackCategories[5].positive += feedback.overall.positive;
+          feedbackCategories[5].negative += feedback.overall.negative;
+          feedbackCategories[5].neutral += feedback.overall.neutral;
+        }
+
+        // Analyze language usage
+        const language = analyzeLanguageUsage(execution.conversation || execution.transcript);
+        languageUsage[language]++;
+
+        // Categorize call duration
+        if (execution.duration) {
+          const durationCategory = categorizeCallDuration(execution.duration);
+          callDuration[durationCategory]++;
+        }
+      }
+    });
+
+    // Calculate totals for each category
+    feedbackCategories.forEach(category => {
+      category.total = category.positive + category.negative + category.neutral;
+    });
+
+    const analytics: SurveyAnalytics = {
+      totalCalls,
+      averageRating: totalRating > 0 ? Math.round((totalScore / totalRating) * 10) / 10 : 0,
+      satisfactionRate: totalRating > 0 ? Math.round(((feedbackCategories[5].positive) / totalRating) * 100) : 0,
+      feedbackCategories,
+      languageUsage,
+      callDuration,
+      responseRate: totalCalls > 0 ? Math.round((totalRating / totalCalls) * 100) : 0
+    };
+
+    setSurveyAnalytics(analytics);
+    setFeedbackData(feedbackCategories);
   };
 
   const fetchAllExecutions = async () => {
@@ -449,6 +641,7 @@ function App() {
 
       setExecutions(detailedExecutions);
       processRatingData(detailedExecutions);
+      processSurveyAnalytics(detailedExecutions);
     } catch (error) {
       console.error('Error fetching executions:', error);
       setStatus({ type: 'error', message: 'Unable to fetch call logs. Please check your connection.' });
@@ -776,10 +969,31 @@ function App() {
                     <span>Refresh</span>
                   </button>
                   {executions.length > 0 && (
-                    <button onClick={downloadAllExecutions} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2">
-                      <Download className="w-4 h-4" />
-                      <span>Download All</span>
-                    </button>
+                    <>
+                      <button onClick={downloadAllExecutions} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2">
+                        <Download className="w-4 h-4" />
+                        <span>Download All Data</span>
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const recordings = executions.filter(e => e.recording_url);
+                          if (recordings.length > 0) {
+                            recordings.forEach((execution, index) => {
+                              setTimeout(() => {
+                                downloadRecording(execution.recording_url!, execution.execution_id);
+                              }, index * 1000);
+                            });
+                            setStatus({ type: 'success', message: `Downloading ${recordings.length} recordings...` });
+                          } else {
+                            setStatus({ type: 'error', message: 'No recordings available to download' });
+                          }
+                        }}
+                        className="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition-colors flex items-center space-x-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Download All Recordings</span>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -795,10 +1009,42 @@ function App() {
                     <p className="text-2xl font-bold text-blue-700">{executions.length}</p>
                   </div>
                 </div>
+                {status.type && (
+                  <div className={`mt-3 p-3 rounded-lg flex items-start space-x-3 ${
+                    status.type === 'success'
+                      ? 'bg-green-100 border border-green-200'
+                      : 'bg-red-100 border border-red-200'
+                  }`}>
+                    {status.type === 'success' ? (
+                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    )}
+                    <p className={`text-sm ${
+                      status.type === 'success' ? 'text-green-800' : 'text-red-800'
+                    }`}>{status.message}</p>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="p-8">
+              {status.type && (
+                <div className={`mb-6 p-4 rounded-lg flex items-start space-x-3 ${
+                  status.type === 'success'
+                    ? 'bg-green-100 border border-green-200'
+                    : 'bg-red-100 border border-red-200'
+                }`}>
+                  {status.type === 'success' ? (
+                    <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                  )}
+                  <p className={`text-sm ${
+                    status.type === 'success' ? 'text-green-800' : 'text-red-800'
+                  }`}>{status.message}</p>
+                </div>
+              )}
               {isLoadingLogs ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -904,10 +1150,40 @@ function App() {
                     <p className="text-gray-600">Customer satisfaction ratings and insights</p>
                   </div>
                 </div>
-                <button onClick={fetchAllExecutions} disabled={isLoadingLogs} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center space-x-2">
-                  {isLoadingLogs ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />} 
-                  <span>Refresh Data</span>
-                </button>
+                <div className="flex items-center space-x-3">
+                  <button onClick={fetchAllExecutions} disabled={isLoadingLogs} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center space-x-2">
+                    {isLoadingLogs ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />} 
+                    <span>Refresh Data</span>
+                  </button>
+                  {surveyAnalytics.totalCalls > 0 && (
+                    <button 
+                      onClick={() => {
+                        const analyticsData = {
+                          timestamp: new Date().toISOString(),
+                          agent_id: AGENT_ID,
+                          summary: surveyAnalytics,
+                          feedback_data: feedbackData,
+                          rating_data: ratingData
+                        };
+                        const dataStr = JSON.stringify(analyticsData, null, 2);
+                        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                        const url = URL.createObjectURL(dataBlob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `analytics-${AGENT_ID}-${new Date().toISOString().split('T')[0]}.json`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                        setStatus({ type: 'success', message: 'Analytics data exported successfully!' });
+                      }}
+                      className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Export Analytics</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -917,7 +1193,7 @@ function App() {
                   <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
                   <span className="ml-3 text-gray-600">Loading analytics...</span>
                 </div>
-              ) : totalCalls === 0 ? (
+              ) : surveyAnalytics.totalCalls === 0 ? (
                 <div className="text-center py-12">
                   <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No rating data found</h3>
@@ -926,12 +1202,12 @@ function App() {
               ) : (
                 <div className="space-y-8">
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-xl border border-blue-200">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-blue-600 text-sm font-medium">Total Rated Calls</p>
-                          <p className="text-3xl font-bold text-blue-900">{totalCalls}</p>
+                          <p className="text-blue-600 text-sm font-medium">Total Calls</p>
+                          <p className="text-3xl font-bold text-blue-900">{surveyAnalytics.totalCalls}</p>
                         </div>
                         <Phone className="w-8 h-8 text-blue-500" />
                       </div>
@@ -940,8 +1216,8 @@ function App() {
                     <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl border border-green-200">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-green-600 text-sm font-medium">Average Rating</p>
-                          <p className="text-3xl font-bold text-green-900">{averageRating}/5</p>
+                          <p className="text-green-600 text-sm font-medium">Average NPS</p>
+                          <p className="text-3xl font-bold text-green-900">{surveyAnalytics.averageRating}/10</p>
                         </div>
                         <Star className="w-8 h-8 text-green-500" />
                       </div>
@@ -951,80 +1227,145 @@ function App() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-purple-600 text-sm font-medium">Satisfaction Rate</p>
-                          <p className="text-3xl font-bold text-purple-900">
-                            {Math.round(((ratingData.filter(r => r.rating >= 4).reduce((sum, r) => sum + r.count, 0)) / totalCalls) * 100)}%
-                          </p>
+                          <p className="text-3xl font-bold text-purple-900">{surveyAnalytics.satisfactionRate}%</p>
                         </div>
                         <TrendingUp className="w-8 h-8 text-purple-500" />
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-6 rounded-xl border border-orange-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-orange-600 text-sm font-medium">Response Rate</p>
+                          <p className="text-3xl font-bold text-orange-900">{surveyAnalytics.responseRate}%</p>
+                        </div>
+                        <MessageSquare className="w-8 h-8 text-orange-500" />
                       </div>
                     </div>
                   </div>
 
                   {/* Charts */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Bar Chart */}
+                    {/* NPS Rating Chart */}
                     <div className="bg-gray-50 p-6 rounded-xl">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Rating Distribution</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">NPS Rating Distribution (0-10)</h3>
                       <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={ratingData}>
+                        <BarChart data={ratingData.filter(d => d.count > 0)}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis 
                             dataKey="rating" 
-                            tickFormatter={(value) => `${value} Star${value !== 1 ? 's' : ''}`}
+                            tickFormatter={(value) => `${value}`}
                           />
                           <YAxis />
                           <Tooltip 
                             formatter={(value, name) => [value, 'Count']}
-                            labelFormatter={(label) => `${label} Star${label !== 1 ? 's' : ''}`}
+                            labelFormatter={(label) => `Rating: ${label}`}
                           />
                           <Bar dataKey="count" fill="#3B82F6" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
 
-                    {/* Pie Chart */}
+                    {/* Language Usage Chart */}
                     <div className="bg-gray-50 p-6 rounded-xl">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Rating Percentage</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Language Usage</h3>
                       <ResponsiveContainer width="100%" height={300}>
                         <PieChart>
                           <Pie
-                            data={ratingData.filter(d => d.count > 0)}
+                            data={[
+                              { name: 'English', value: surveyAnalytics.languageUsage.english },
+                              { name: 'Hindi', value: surveyAnalytics.languageUsage.hindi },
+                              { name: 'Both', value: surveyAnalytics.languageUsage.both }
+                            ].filter(d => d.value > 0)}
                             cx="50%"
                             cy="50%"
                             labelLine={false}
-                            label={({ rating, percentage }) => `${rating}★ (${percentage}%)`}
+                            label={({ name, value }) => `${name}: ${value}`}
                             outerRadius={80}
                             fill="#8884d8"
-                            dataKey="count"
+                            dataKey="value"
                           >
-                            {ratingData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
+                            <Cell fill="#3B82F6" />
+                            <Cell fill="#10B981" />
+                            <Cell fill="#F59E0B" />
                           </Pie>
-                          <Tooltip formatter={(value, name) => [value, 'Count']} />
+                          <Tooltip formatter={(value, name) => [value, 'Calls']} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
 
+                  {/* Feedback Categories Chart */}
+                  <div className="bg-gray-50 p-6 rounded-xl">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Feedback by Category</h3>
+                    <ResponsiveContainer width="100%" height={400}>
+                      <BarChart data={feedbackData.filter(d => d.total > 0)}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="category" />
+                        <YAxis />
+                        <Tooltip 
+                          formatter={(value: any, name: string) => [value, name]}
+                          content={({ active, payload, label }: any) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-white p-3 border rounded-lg shadow-lg">
+                                  <p className="font-medium">{label}</p>
+                                  <p className="text-green-600">Positive: {data.positive}</p>
+                                  <p className="text-red-600">Negative: {data.negative}</p>
+                                  <p className="text-gray-600">Neutral: {data.neutral}</p>
+                                  <p className="text-blue-600">Total: {data.total}</p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Legend />
+                        <Bar dataKey="positive" stackId="a" fill="#10B981" name="Positive" />
+                        <Bar dataKey="negative" stackId="a" fill="#EF4444" name="Negative" />
+                        <Bar dataKey="neutral" stackId="a" fill="#6B7280" name="Neutral" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Call Duration Chart */}
+                  <div className="bg-gray-50 p-6 rounded-xl">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Call Duration Distribution</h3>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Short (<3 min)', value: surveyAnalytics.callDuration.short },
+                            { name: 'Medium (3-5 min)', value: surveyAnalytics.callDuration.medium },
+                            { name: 'Long (>5 min)', value: surveyAnalytics.callDuration.long }
+                          ].filter(d => d.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, value }) => `${name}: ${value}`}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          <Cell fill="#EF4444" />
+                          <Cell fill="#F59E0B" />
+                          <Cell fill="#10B981" />
+                        </Pie>
+                        <Tooltip formatter={(value, name) => [value, 'Calls']} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+
                   {/* Detailed Breakdown */}
                   <div className="bg-gray-50 p-6 rounded-xl">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Detailed Breakdown</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">NPS Rating Breakdown</h3>
                     <div className="space-y-3">
-                      {ratingData.map((rating) => (
+                      {ratingData.filter(r => r.count > 0).map((rating) => (
                         <div key={rating.rating} className="flex items-center justify-between p-3 bg-white rounded-lg">
                           <div className="flex items-center space-x-3">
-                            <div className="flex">
-                              {[...Array(5)].map((_, i) => (
-                                <Star
-                                  key={i}
-                                  className={`w-4 h-4 ${
-                                    i < rating.rating ? 'text-yellow-400 fill-current' : 'text-gray-300'
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            <span className="font-medium text-gray-900">{rating.rating} Star{rating.rating !== 1 ? 's' : ''}</span>
+                            <span className="text-2xl font-bold text-blue-600">{rating.rating}</span>
+                            <span className="font-medium text-gray-900">NPS Rating</span>
                           </div>
                           <div className="flex items-center space-x-4">
                             <span className="text-gray-600">{rating.count} calls</span>
@@ -1040,8 +1381,114 @@ function App() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Feedback Summary */}
+                  <div className="bg-gray-50 p-6 rounded-xl">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Feedback Summary by Service</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {feedbackData.filter(d => d.total > 0).map((category) => (
+                        <div key={category.category} className="bg-white p-4 rounded-lg border">
+                          <h4 className="font-semibold text-gray-900 mb-3">{category.category}</h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-green-600">Positive</span>
+                              <span className="font-medium">{category.positive}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-red-600">Negative</span>
+                              <span className="font-medium">{category.negative}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-600">Neutral</span>
+                              <span className="font-medium">{category.neutral}</span>
+                            </div>
+                            <div className="border-t pt-2">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-gray-900">Total</span>
+                                <span className="font-bold text-blue-600">{category.total}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* Survey Questions & Responses */}
+              {surveyAnalytics.totalCalls > 0 && (
+                <div className="mt-8 bg-gray-50 p-6 rounded-xl">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Survey Questions & Response Analysis</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white p-4 rounded-lg border">
+                      <h4 className="font-medium text-gray-900 mb-3">Survey Questions Asked</h4>
+                      <ul className="text-sm text-gray-700 space-y-2">
+                        <li>• Overall satisfaction with WEBSITES, SEO, SOCIAL MEDIA MANAGEMENT</li>
+                        <li>• NPS score rating (0-10 scale)</li>
+                        <li>• What customers liked most about the services</li>
+                        <li>• Areas of improvement or challenges faced</li>
+                        <li>• Language preference (English/Hindi)</li>
+                      </ul>
+                    </div>
+                    <div className="bg-white p-4 rounded-lg border">
+                      <h4 className="font-medium text-gray-900 mb-3">Response Insights</h4>
+                      <div className="text-sm text-gray-700 space-y-2">
+                        <p><span className="font-medium">Total Responses:</span> {surveyAnalytics.totalCalls}</p>
+                        <p><span className="font-medium">Rating Responses:</span> {Math.round((surveyAnalytics.totalCalls * surveyAnalytics.responseRate) / 100)}</p>
+                        <p><span className="font-medium">Language Mix:</span> {surveyAnalytics.languageUsage.english}E, {surveyAnalytics.languageUsage.hindi}H, {surveyAnalytics.languageUsage.both}B</p>
+                        <p><span className="font-medium">Avg Call Duration:</span> {surveyAnalytics.callDuration.medium > 0 ? '3-5 min' : surveyAnalytics.callDuration.short > 0 ? '<3 min' : '>5 min'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Business Context */}
+              <div className="mt-8 bg-blue-50 p-6 rounded-xl border border-blue-200">
+                <h3 className="text-lg font-semibold text-blue-900 mb-4">Business Context</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-medium text-blue-900 mb-2">About Our Business</h4>
+                    <p className="text-sm text-blue-800">
+                      WE CREATES WEBSITES FOR SMALL BUSINESSES AND STARTUPS HELP IN THEIR SEO, MANAGE CONTENT, MARKET THEM
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-blue-900 mb-2">Survey Agent</h4>
+                    <p className="text-sm text-blue-800">
+                      Feedback Assistant - A survey agent at AiServices collecting feedback on website, SEO, and social media management services
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Survey Guidelines */}
+              <div className="mt-8 bg-green-50 p-6 rounded-xl border border-green-200">
+                <h3 className="text-lg font-semibold text-green-900 mb-4">Survey Guidelines & Agent Behavior</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-medium text-green-900 mb-2">Agent Characteristics</h4>
+                    <ul className="text-sm text-green-800 space-y-1">
+                      <li>• Extremely friendly and understanding</li>
+                      <li>• Starts sentences with conversational words</li>
+                      <li>• Communicates in English and Hindi</li>
+                      <li>• Professional but kind HR-like tone</li>
+                      <li>• Keeps responses short and crisp</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-green-900 mb-2">Survey Flow</h4>
+                    <ul className="text-sm text-green-800 space-y-1">
+                      <li>• Introduces as Feedback Assistant</li>
+                      <li>• Asks if it's a good time to chat</li>
+                      <li>• Collects NPS score (0-10)</li>
+                      <li>• Gathers positive feedback</li>
+                      <li>• Identifies improvement areas</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
