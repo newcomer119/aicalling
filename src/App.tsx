@@ -36,6 +36,24 @@ interface RatingData {
   percentage: number;
 }
 
+interface FeedbackData {
+  category: string;
+  positive: number;
+  negative: number;
+  neutral: number;
+  total: number;
+}
+
+interface SurveyAnalytics {
+  totalCalls: number;
+  averageRating: number;
+  satisfactionRate: number;
+  feedbackCategories: FeedbackData[];
+  languageUsage: { english: number; hindi: number; both: number };
+  callDuration: { short: number; medium: number; long: number };
+  responseRate: number;
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<'single' | 'bulk' | 'logs' | 'analytics'>('single');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -63,6 +81,19 @@ function App() {
   const [ratingData, setRatingData] = useState<RatingData[]>([]);
   const [totalCalls, setTotalCalls] = useState(0);
   const [averageRating, setAverageRating] = useState(0);
+
+  // Enhanced analytics states
+  const [surveyAnalytics, setSurveyAnalytics] = useState<SurveyAnalytics>({
+    totalCalls: 0,
+    averageRating: 0,
+    satisfactionRate: 0,
+    feedbackCategories: [],
+    languageUsage: { english: 0, hindi: 0, both: 0 },
+    callDuration: { short: 0, medium: 0, long: 0 },
+    responseRate: 0
+  });
+  const [feedbackData, setFeedbackData] = useState<FeedbackData[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const AUTH_TOKEN = 'bn-69e9b7cc1a154869931c241d795b050f';
   const AGENT_ID = '3e0767cb-3020-4355-a269-58bea73ca685';
